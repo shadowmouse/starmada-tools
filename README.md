@@ -1,4 +1,4 @@
-# starmada-data
+# Starmada Tools
 Data Transfer Spec and Toolset  for Starmada (2024) Ruleset
 
 This repo uses https://json-schema.org for defining the data structure.
