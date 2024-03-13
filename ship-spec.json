@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://starmada.windowlatch.org/ship-spec.schema.json",
+    "$id": "https://raw.githubusercontent.com/shadowmouse/starmada-data/main/ship-spec.json",
     "title": "Starmada (2024) Ship Spec Document" 
     "description": "Ship Spec Definition for Starmada (2024) Ship Definition JSON Files",
     "type" : "object",
