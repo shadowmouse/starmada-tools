@@ -81,7 +81,7 @@
                                         "damage" : { 
                                             "type" : "integer"
                                         },
-                                    }
+                                    },
                                     required : ["range",  "rate_of_fire", "accuracy", "damage"]
                                 }
                             },
