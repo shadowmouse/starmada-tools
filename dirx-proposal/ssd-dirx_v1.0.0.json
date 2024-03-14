@@ -1,0 +1,108 @@
+{
+  "type": "SSD",
+  "version": "1.0.0",
+  "ship": {
+    "ship_id": "A",
+    "name": "sdf",
+    "Add damage tracking": true
+  },
+  "ship_class": {
+    "class_id": "23ckc239",
+    "class": "Constellation",
+    "faction": "UFP",
+    "type": "BB",
+    "designation": "1701A",
+    "tech_level": 0,
+    "hull": 6.0,
+    "engines": 12,
+    "calc": {
+      "cv": 112,
+      "space_units": 134,
+      "max_space_units": 9249,
+      "hull_reductions": [6, 5, 4, 3, 2, 1],
+      "engines": 234,
+      "engines_reductions": [12, 10, 8, 6, 4, 2],
+      "weapons": 293,
+      "weapons_reductions": [6, 5, 4, 3, 2, 1],
+      "systems": 942,
+      "systems_reductions": [10, 9, 7, 5, 4, 2],
+      "ORAT": 123.234,
+      "DRAT": 28.42,
+      "validated": true
+    },
+    "batteries": [
+      {
+        "battery_id": "asd323lfkjd",
+        "loss_limit": 2,
+        "weapon": {
+          "weapon_id": "asdfsadf",
+          "name": "Fire Fragger",
+          "bands": [
+            {
+              "range": 3,
+              "rate_of_fire": 1,
+              "accuracy": 2,
+              "damage": 1
+            },
+            {
+              "range": 6,
+              "rate_of_fire": 1,
+              "accuracy": 2,
+              "damage": 1
+            }
+          ],
+          "traits": ["disruptive", "cutting"]
+        },
+        "banks": [
+          {
+            "A": true,
+            "B": false,
+            "C": true,
+            "D": false,
+            "E": true,
+            "F": false,
+            "size": 3,
+            "ammo": 0
+          },
+          {
+            "G": true,
+            "H": true,
+            "I": true,
+            "J": false,
+            "K": true,
+            "L": true,
+            "size": 3,
+            "ammo": 0
+          },
+          {
+            "Y": true,
+            "size": 3,
+            "ammo": 0
+          },
+          {
+            "Z": false,
+            "size": 3,
+            "ammo": 0
+          }
+        ]
+      }
+    ],
+    "systems": {
+      "screens_or_": {
+        "forward": 0,
+        "starboard": 0,
+        "aft": 0,
+        "port": 0
+      },
+      "_or_screens": 0,
+      "shields": {
+        "forward": 0,
+        "starboard": 0,
+        "aft": 0,
+        "port": 0,
+        "omni": 0
+      },
+      "enhanced-fire-control": 3
+    }
+  }
+}

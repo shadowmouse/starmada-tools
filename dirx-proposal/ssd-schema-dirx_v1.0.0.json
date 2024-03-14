@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tbd.example.com",
+  "title": "WIP Starmada (2024) SSD Schema",
+  "description": "Starmada (2024) SSD Schema",
+  "type": "object"
+}
