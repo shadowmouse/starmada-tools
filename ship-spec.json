@@ -82,20 +82,20 @@
                                             "type" : "integer"
                                         },
                                     },
-                                    required : ["range",  "rate_of_fire", "accuracy", "damage"]
+                                    "required" : ["range",  "rate_of_fire", "accuracy", "damage"]
                                 }
                             },
                             "munition_count" : { 
                                 "type" : "integer"
                             },
-                            required: ["munition_count", "bands", "traits", "name"]
+                            "required" : ["munition_count", "bands", "traits", "name"]
                         }
                     },
-                    required: ["loss_limit", "banks"]
+                    "required" : ["loss_limit", "banks"]
                 },
             }
         },
-        required: ["faction", "class", "type", "size", "engines", "tech_levels"]
+        "required" : ["faction", "class", "type", "size", "engines", "tech_levels"]
     },
     "systems" : {
         "type" : "object",
