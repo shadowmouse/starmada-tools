@@ -286,7 +286,7 @@ export const weaponTraitConfigs = {
     "chain-fire" : { multiplier: 1.5, label: "Chain Fire" , short_code: "Cfr", prohibited: ["salvo-fire"] },
     "crushing" : { multiplier: 3, label: "Crushing" , short_code: "Crsh", prohibited: [] },
     "cutting" : { multiplier: 1.4, label: "Cutting" , short_code: "Ctg", prohibited: ["sweeping"] }, 
-    "defensive" : { multiplier: 1, label: "Cutting" , short_code: "Dfs", prohibited: ["seeker"] },
+    "defensive" : { multiplier: 1, label: "Defensive" , short_code: "Dfs", prohibited: ["seeker"] },
     "disruptive" : { multiplier: 2, label: "Disruptive" , short_code: "Dis", prohibited: [""] },
     "enveloping" : { multiplier: 1.2, label: "Enveloping" , short_code: "Env", prohibited: [] },
     "fusillade-1" : { multiplier: 1.5, label: "Fusillade" , short_code: "Fl1", prohibited: ["overload", "overload-2", "overload-3"] },
