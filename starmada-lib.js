@@ -1,5 +1,7 @@
 import { evaluate } from "mathjs";
 
+const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
+
 const roundToPrecision = (value, precision) => {
     return Math.round(value * Math.pow(10, precision)) / Math.pow(10, precision);
 }
@@ -37,19 +39,15 @@ export const validateHullSize = (hullSize) => {
 
 export function calculateDesignAttributes (hullSize, engineRating, batteries, systems, techLevels) {
     let spaceUnits = shipSpaceUnits(hullSize);
-    let baseEngineFactor = engineFactor(hullSize);
-    let baseEngineSpaceUnits = baseEngineFactor * engineRating;
-    let weaponSpaceUnits = shipWeaponsSUTotal(batteries, systems, (typeof techLevels == "object" ? (techLevels?.weapons || 0) : techLevels))
-    let systemsSpaceUnits = shipSystemsSUTotal(systems, hullSize, baseEngineFactor, engineRating, weaponSpaceUnits)
+    let baseEngineFactor = engineFactor(hullSize, (typeof techLevels == "object" ?  (techLevels?.engines || 0) : techLevels));
+    let baseEngineSpaceUnits = engineSpaceUnits(hullSize, engineRating, (typeof techLevels == "object" ? (techLevels?.engines || 0) : techLevels ));
+    let weaponSpaceUnits = shipWeaponsSUTotal(batteries, (typeof techLevels === "object" ? (techLevels?.weapons || 0) : techLevels ))
+    let systemsSpaceUnits = shipSystemsSUTotal(systems, hullSize, baseEngineFactor, engineRating, weaponSpaceUnits, techLevels)
 
     let effectiveEngineRatingMultiplier = 1;
     let effectiveEngineRatingAdditions = Object.keys(systems).reduce((ratingSum, systemKey) => {
         let system = shipSystemsConfigs[systemKey];
         if(system.erm !== false) {
-            if(`${system.erm}`.startsWith("*")) {  
-                effectiveEngineRatingMultiplier *= evaluate(`${system.erm}`.slice(1), { system_count: systems[systemKey] });
-                return ratingSum; 
-            }
             let systemEngineRatingAddition = evaluate(`${system.erm}`, { system_count: systems[systemKey], engine_rating: engineRating });
             return ratingSum + systemEngineRatingAddition;
         }
@@ -60,7 +58,7 @@ export function calculateDesignAttributes (hullSize, engineRating, batteries, sy
         engine_factor: baseEngineFactor,
         engine_rating: engineRating,
         hull_size: hullSize, 
-        fighter_tech_level: (typeof techLevels == "object" ? (techLevels?.fighter || 0) : techLevels),
+        fighters_tech_level: (typeof techLevels == "object" ? (techLevels?.fighters || 0) : techLevels),
         defense_tech_level: (typeof techLevels == "object" ? (techLevels?.defense || 0) : techLevels),
         weapon_tech_level: (typeof techLevels == "object" ? (techLevels?.weapon || 0) : techLevels),
         engine_tech_level: (typeof techLevels == "object" ? (techLevels?.engine || 0) : techLevels)
@@ -75,10 +73,6 @@ export function calculateDesignAttributes (hullSize, engineRating, batteries, sy
     let effectiveHullSizeAdditions = Object.keys(systems).reduce((ratingSum, systemKey) => {
         let system = shipSystemsConfigs[systemKey];
         if(system.hsm !== false) {
-            if(`${system.hsm}`.startsWith("*")) {  
-                effectiveHullSizeMultiplier *= evaluate(`${system.hsm}`, { system_count: systems[systemKey], hull_size: hullSize })
-                return ratingSum; 
-            }
             let systemHullSizeAddition = evaluate(`${system.hsm}`,  { hull_size: hullSize, drat: shipDRATValue, system_count: systems[systemKey], engine_rating: engineRating });
             return ratingSum + systemHullSizeAddition;
         }
@@ -109,8 +103,8 @@ export function calculateDesignAttributes (hullSize, engineRating, batteries, sy
 
 export function shipSpaceUnits(hullSize) { return hullSize * 100; }
 
-export function engineFactor(hullSize) { return (hullSize * (hullSize + 50)) / 10; }
-export function engineSpaceUnits(hullSize, engineRating) { return Math.ceil(engineFactor(hullSize) * engineRating); }
+export function engineFactor(hullSize, techLevel = 0) { return ((hullSize * (hullSize + 50)) / 10) * techLevelModifier(techLevel); }
+export function engineSpaceUnits(hullSize, engineRating, techLevel = 0) { return Math.ceil(engineFactor(hullSize, techLevel) * engineRating); }
 export function effectiveEngineRating(base_engine_rating, systems  = {}, customConfigs = {}) {
     let effectiveEngineRating = base_engine_rating;
     Object.keys(systems).map((systemKey) => {
@@ -156,7 +150,7 @@ export function weaponBaseSpaceUnitsFromConfig(config = { bands: [{
     rate_of_fire: 1,
     accuracy: 2,
     damage: 1
-}], traits: [] }) {
+}], traits: [] }, weapons_tech_level = 0) {
     
     let weaponStrength = weaponBaseStrength(config.bands);
     
@@ -168,42 +162,41 @@ export function weaponBaseSpaceUnitsFromConfig(config = { bands: [{
     
     let sorted_bands = config.bands.sort((a, b) => a.range - b.range);
     let maxRange = sorted_bands[sorted_bands.length - 1].range;
-    let baseSpaceRequirements = modifiedStrength * 0.10 / (maxRange + 4);
+    let baseSpaceRequirements = (modifiedStrength * 0.10 / (maxRange + 4)) * techLevelModifier(weapons_tech_level);  
     return parseFloat(baseSpaceRequirements.toFixed(2));
 }
 
 
-export function weaponBankSpaceUnits(weaponBSU, weaponCount, arcCount, munition_count = 0) {
+export function weaponBankSpaceUnits(weaponBSU, weaponCount, arcCount, munition_count = 0, tech_level = 0) {
     let munition_count_factors = [1, 0.3, 0.4, 0.5, 0.6];
-    return parseFloat(((((weaponBSU * weaponCount * (arcCount + 2)) * munition_count_factors[munition_count]) * 10) / 10).toFixed(2)); 
+    let bankSpaceUnits = ((((weaponBSU * weaponCount * (arcCount + 2)) * munition_count_factors[munition_count]) * 10) / 10)
+    return parseFloat((bankSpaceUnits * techLevelModifier(tech_level)).toFixed(2)); 
 }
 
-export function shipWeaponsSUTotal (batteries, weapons_tech_level) {
+export function shipWeaponsSUTotal(batteries, weapons_tech_level = 0) {
     let shipWeaponsSUTotal = batteries.reduce((weaponsTotal, battery) => {
         let weaponBaseSU = weaponBaseSpaceUnitsFromConfig({ ...battery.config });
         let batterySUTotal = Object.keys(battery.banks).reduce((batteryTotal, bankKey) => {
             let bankSize = battery.banks[bankKey];
             let bankArcCount = bankKey.split("").filter((arcKey) => !["Z", "Y"].includes(`${arcKey}`.toLocaleUpperCase())).length;
-            let bankSpaceUnits = weaponBankSpaceUnits(weaponBaseSU, bankSize, bankArcCount, battery.config.munition_count)
+            let bankSpaceUnits = weaponBankSpaceUnits(weaponBaseSU, bankSize, bankArcCount, battery.config.munition_count, weapons_tech_level);
             return batteryTotal + bankSpaceUnits;
         }, 0);
-        console.log("SWSU - ", batterySUTotal);
         return weaponsTotal + batterySUTotal;
     }, 0)
     return shipWeaponsSUTotal;
 }
 
-export function shipORATTotal (batteries, systems, shipFactors, addonSystems = {}) {
+export function shipORATTotal(batteries, systems, shipFactors, addonSystems = {}) {
     let batteriesORAT = batteries.reduce((shipORAT, battery) => {
-        let wbsu = weaponBaseSpaceUnitsFromConfig(battery.config)
+        let wbsu = weaponBaseSpaceUnitsFromConfig(battery.config, shipFactors)
         let maxRange = 0;
         let batterySpaceUnits = Object.keys(battery.banks).reduce((batterySize, bankKey) => {
             let range = battery.config.bands.at(-1).range;
             if(range > maxRange) { maxRange = range; }
             let bankArcCount = bankKey.split("").filter((arcKey) => !["Z", "Y"].includes(`${arcKey}`.toLocaleUpperCase())).length;
-            return batterySize + weaponBankSpaceUnits(wbsu, battery.banks[bankKey], bankArcCount, battery.config.munition_count)
+            return batterySize + weaponBankSpaceUnits(wbsu, battery.banks[bankKey], bankArcCount, battery.config.munition_count, shipFactors.weapons_tech_level)
         }, 0)
-        console.log("BSU - ", battery.config.name, wbsu, batterySpaceUnits, battery.config)
         let batteryORAT = (batterySpaceUnits * (shipFactors.effective_engine_rating + maxRange)) * 0.1;
         return shipORAT + batteryORAT;
     }, 0)
@@ -228,18 +221,22 @@ export function shipORATTotal (batteries, systems, shipFactors, addonSystems = {
     return batteriesORAT + shipTraitsORAT;
 }
 
-export function shipSystemsSUTotal (systems, hull_size, engine_factor, engine_rating, ship_weapons_space, addonSystems = {}) { 
+export function shipSystemsSUTotal (systems, hull_size, engine_factor, engine_rating, ship_weapons_space, tech_levels, addonSystems = {}) { 
     let systemsSUMultiplier = 1;
+
+    let techLevels = (typeof tech_levels === "object")? tech_levels : { 
+        "fighters" : tech_levels,
+        "weapons" : tech_levels,
+        "defenses" : tech_levels,
+        "engines" : tech_levels,        
+    }
+    
     let shipSystemSU = Object.keys(systems).reduce((systemsTotal, systemKey) => {
         let systemConfig = { ...addonSystems, ...shipSystemsConfigs }[systemKey];
         let systemCount = systems[systemKey];
         let factors = { hull_size: hull_size, system_count: systemCount, engine_factor: engine_factor, engine_rating: engine_rating, weapons_su: ship_weapons_space };
         if(systemConfig.su !== false) { 
-            if(`${systemConfig.su}`.startsWith("*")) { 
-                systemsSUMultiplier *= parseFloat(`${systemConfig.su}`.slice(1))
-                return systemsTotal;
-            }
-            let systemSU = evaluate(`${systemConfig.su}`, factors);
+            let systemSU = evaluate(`${systemConfig.su}`, factors) * techLevelModifier(techLevels[systemConfig.tech] || 0);
             return systemsTotal + systemSU; 
         }
         return systemsTotal;
@@ -265,9 +262,10 @@ export function shipDRAT(systems, addonSystems = {}) {
                 "forward" : [0.33, 0.5, 0.67, 1],
                 "port" : [0.25, 0.38, 0.50, 0.75],
                 "starboard" : [0.25, 0.38, 0.50, 0.75],
-                "aft" : [0.17, 0.24, 0.33, 0.5]
+                "aft" : [0.17, 0.24, 0.33, 0.5],
+                "omni" : [1, 1.5, 2, 3]
             }
-            let direction = systemKey.split("-")[1];
+            let direction = systemKey.split("-")[(systemKey.includes("omni") ? 0 : 1)];
             screenDRATMultiplier += screenDirectionalDRATValues[direction][systemCount];
             return shipDRAT;
         }
@@ -276,7 +274,7 @@ export function shipDRAT(systems, addonSystems = {}) {
         }
         return shipDRAT;
     }, 1)
-    return Math.round((shipDRATValue * screenDRATMultiplier) * 100) / 100; 
+    return Math.round((shipDRATValue * (screenDRATMultiplier > 0 ? screenDRATMultiplier : 1)) * 100) / 100; 
 }
 
 export const weaponTraitConfigs = {
@@ -380,8 +378,68 @@ export const shipSystemsConfigs = {
     },
     "aux-services": { 
         label: "Auxilliary Services", 
-        tech: "n/a",
-        type: "equipment", 
+        tech: "none",
+        type: "trait", 
+        su: "system_count * 25", 
+        orat: false,
+        drat: false,
+        erm: false,
+        hsm: false,
+    },
+    "aux-services-m": { 
+        label: "Aux Services (Medical)", 
+        tech: "none",
+        type: "trait", 
+        su: "system_count * 25", 
+        orat: false,
+        drat: false,
+        erm: false,
+        hsm: false,
+    },
+    "aux-services-c": { 
+        label: "Aux Services (Cargo)", 
+        tech: "none",
+        type: "trait", 
+        su: "system_count * 25", 
+        orat: false,
+        drat: false,
+        erm: false,
+        hsm: false,
+    },
+    "aux-services-p": { 
+        label: "Aux Services (Passenger)", 
+        tech: "none",
+        type: "trait", 
+        su: "system_count * 25", 
+        orat: false,
+        drat: false,
+        erm: false,
+        hsm: false,
+    },
+    "aux-services-r": { 
+        label: "Aux Services (Repair)", 
+        tech: "none",
+        type: "trait", 
+        su: "system_count * 25", 
+        orat: false,
+        drat: false,
+        erm: false,
+        hsm: false,
+    },
+    "aux-services-s": { 
+        label: "Aux Services (Science)", 
+        tech: "none",
+        type: "trait", 
+        su: "system_count * 25", 
+        orat: false,
+        drat: false,
+        erm: false,
+        hsm: false,
+    },
+    "aux-services-t": { 
+        label: "Aux Services (Troops)", 
+        tech: "none",
+        type: "trait", 
         su: "system_count * 25", 
         orat: false,
         drat: false,
@@ -398,10 +456,20 @@ export const shipSystemsConfigs = {
         hsm: false,
         erm: "0.25"
     },
+    "bulkheads": { 
+        label: "Bulkheads", 
+        tech: "defense",
+        type: "trait", 
+        su: "system_count * 40", 
+        orat: false,
+        drat: false,
+        hsm: false,
+        erm: "1.00"
+    },
     "carrier": { 
         label: "Carrier", 
-        tech: "fighter",
-        type: "equipment", 
+        tech: "fighters",
+        type: "trait", 
         su: "system_count * 100", 
         orat: "125",
         drat: false,
@@ -411,7 +479,7 @@ export const shipSystemsConfigs = {
 
     "carrier-with-tubes": { 
         label: "Carrier (Lnch Tubes)", 
-        tech: "fighter",
+        tech: "fighters",
         type: "trait", 
         su: "system_count * 120", 
         orat: "125 * 1.2",
@@ -426,7 +494,7 @@ export const shipSystemsConfigs = {
         type: "equipment", 
         su: "system_count * hull_size * 20", 
         orat: false,
-        drat: "drat * 1.7",
+        drat: "drat * 2.0",
         erm: false,
         hsm: false,
     },
@@ -470,17 +538,16 @@ export const shipSystemsConfigs = {
         erm: false,
         hsm: false,
     },
-    // NOT SUPPORTED
-    // "fuel": { 
-    //     label: "Fuel", 
-    //     tech: "misc",
-    //     type: "munitions", 
-    //     su: "system_count * 10", 
-    //     orat: "(effective_engine_rating + 10) * 0.5",
-    //     drat: false,
-    //     erm: false,
-    //     hsm: false,
-    // },
+    "zfuel": { 
+        label: "Fuel", 
+        tech: "misc",
+        type: "munitions", 
+        su: "0", 
+        orat: "0",
+        drat: false,
+        erm: false,
+        hsm: false,
+    },
     "hyperdrive": { 
         label: "Hyperdrive", 
         tech: "engines",
@@ -526,7 +593,7 @@ export const shipSystemsConfigs = {
     },
     "mines": { 
         label: "Mines", 
-        tech: "fighter",
+        tech: "weapons",
         type: "munition", 
         su: "system_count * 20", 
         orat: "system_count * 25",
@@ -534,58 +601,58 @@ export const shipSystemsConfigs = {
         erm: false,
         hsm: "(system_count * (1 / drat))",
     },
-    "pivot-a": { 
-        label: "Pivot A", 
-        tech: "misc",
-        type: "trait", 
-        su: "*1.2", 
-        orat: false,
-        drat: false,
-        erm: "*1.1",
-        hsm: false,
-    },
-    "pivot-b": { 
-        label: "Pivot B", 
-        tech: "misc",
-        type: "trait", 
-        su: "*1.1", 
-        orat: false,
-        drat: false,
-        erm: "*1.1",
-        hsm: false,
-    },
-    "pivot-c": { 
-        label: "Pivot C", 
-        tech: "misc",
-        type: "trait", 
-        su: "*1.0", 
-        orat: false,
-        drat: false,
-        erm: "*1.0",
-        hsm: false,
-    },
-    "pivot-d": { 
-        label: "Pivot D", 
-        tech: "misc",
-        type: "trait", 
-        su: "*0.9", 
-        orat: false,
-        drat: false,
-        erm: "*0.9",
-        hsm: false,
-    },
-    "pivot-e": { 
-        label: "Pivot E", 
-        tech: "misc",
-        type: "trait", 
-        su: "*0.8", 
-        orat: "",
-        drat: false,
-        erm: "*0.8",
-        hsm: false,
-    },
+    // "pivot-a": { 
+    //     label: "Pivot A", 
+    //     tech: "misc",
+    //     type: "trait", 
+    //     su: "*1.2", 
+    //     orat: false,
+    //     drat: false,
+    //     erm: "*1.1",
+    //     hsm: false,
+    // },
+    // "pivot-b": { 
+    //     label: "Pivot B", 
+    //     tech: "misc",
+    //     type: "trait", 
+    //     su: "*1.1", 
+    //     orat: false,
+    //     drat: false,
+    //     erm: "*1.1",
+    //     hsm: false,
+    // },
+    // "pivot-c": { 
+    //     label: "Pivot C", 
+    //     tech: "misc",
+    //     type: "trait", 
+    //     su: "*1.0", 
+    //     orat: false,
+    //     drat: false,
+    //     erm: "*1.0",
+    //     hsm: false,
+    // },
+    // "pivot-d": { 
+    //     label: "Pivot D", 
+    //     tech: "misc",
+    //     type: "trait", 
+    //     su: "*0.9", 
+    //     orat: false,
+    //     drat: false,
+    //     erm: "*0.9",
+    //     hsm: false,
+    // },
+    // "pivot-e": { 
+    //     label: "Pivot E", 
+    //     tech: "misc",
+    //     type: "trait", 
+    //     su: "*0.8", 
+    //     orat: "",
+    //     drat: false,
+    //     erm: "*0.8",
+    //     hsm: false,
+    // },
     "point-defenese-system": { 
-        label: "Point Defense Sytem", 
+        label: "Point Defense System", 
         tech: "defenses",
         type: "equipment", 
         su: "system_count * 25", 
@@ -654,10 +721,20 @@ export const shipSystemsConfigs = {
         erm: false,
         hsm: false,
     },
+    "omni-screen": { 
+        label: "Omni-Screens", 
+        tech: "defenses",
+        type: "equipment", 
+        su: "system_count * hull_size * 10", 
+        orat: false,
+        drat: false,
+        erm: false,
+        hsm: "0.75",
+    },
     "omni-shield": { 
         label: "Omni-Shields", 
         tech: "defenses",
-        type: "munition", 
+        type: "equipment", 
         su: "system_count * 15", 
         orat: false,
         drat: false,
@@ -726,11 +803,11 @@ export const shipSystemsConfigs = {
     },
     "shuttlecraft": { 
         label: "Shuttlecraft", 
-        tech: "fighter",
+        tech: "fighters",
         type: "munition", 
         su: "system_count * 15", 
         orat: "system_count * 10",
-        drat: "drat / 2",
+        drat: false,
         erm: false,
         hsm: "(system_count * (2 / drat))",
     },
@@ -766,7 +843,7 @@ export const standardWeaponTypes = {
     "lasercannon": { baseName: "Laser Cannon", traits: ["accurate"] },
     "massdriver": { baseName: "Mass Driver", traits: ["crushing", "semi-piercing"] },
     "needlebeam": { baseName: "Needlebeam", traits: ["cutting", "pinpoint"] },
-    "phasecannon": { baseName: "Phase Cannon", traits: ["phasing-1"] },
+    "phasecannon": { baseName: "Phase Cannon", traits: ["phasing"] },
     "pulselaser": { baseName: "Pulse Laser", traits: ["repeating-5"] },
     "shockcannon": { baseName: "Shock Cannon", traits: [], damage_taper: "normal" },
 }
@@ -785,4 +862,24 @@ export function techLevelModifier(techLevel) {
         case 2: return 0.5;
         default: return 1;
     }
+}
+
+export function fuelBunkerage(maxSpace, unusedSpace, techLevel = 0) {
+
+    let emptyVolumeMassFraction = clamp((unusedSpace / maxSpace), 0.10, 0.75) * 100;
+    
+    let bunkerageRangeIndex = techLevel + 2;
+    let massFractionThresholds = [10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75]
+    let massFractionIndex = massFractionThresholds.reduce((mfi, thv, idx) => {
+        if(thv <= emptyVolumeMassFraction) {  return idx;  }
+        return mfi;
+    }, 0)
+    let fuelBunkerageRanges = [
+        [8,9,11,12,14,15,17,18,29,22,24,26,28,30,32,34,37,39,42,44,47,50,53,55,56,58,60,62,63,65,67,69,71,73,75,77,79,82,84,87,89,92,95,97],
+        [10,12,14,16,18,20,22,24,27,29,32,35,37,40,43,45,48,52,55,58,62,66,70,72,74,76,78,81,83,85,88,91,93,96,99,101,104,107,110,113,117,121,124,128],
+        [12,14,17,19,22,24,26,29,32,35,39,42,45,48,51,55,59,63,67,71,75,80,85,87,89,92,95,98,100,103,106,109,112,116,119,122,126,129,133,137,141,145,150,154],
+        [15,18,21,24,27,30,33,36,40,44,48,52,56,60,64,68,73,78,83,88,93,99,105,108,111,114,118,121,125,128,132,136,140,144,148,152,157,161,166,171,176,182,187,193],
+        [20,24,28,32,36,40,44,48,53,59,64,69,75,80,85,91,98,104,111,118,124,132,140,144,148,152,157,161,166,171,175,180,186,191,196,202,208,214,220,227,233,240,248,255]
+    ]
+    return fuelBunkerageRanges[bunkerageRangeIndex][massFractionIndex];
 }
