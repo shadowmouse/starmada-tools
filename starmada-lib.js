@@ -37,10 +37,10 @@ export const validateHullSize = (hullSize) => {
     return hullSize; 
 }
 
-export function calculateDesignAttributes (hullSize, engineRating, batteries, systems, techLevels) {
+export function calculateDesignAttributes (hullSize, engineRating, batteries, systems, techLevels, engineAPConfig = []) {
     let spaceUnits = shipSpaceUnits(hullSize);
     let baseEngineFactor = engineFactor(hullSize, (typeof techLevels == "object" ?  (techLevels?.engines || 0) : techLevels));
-    let baseEngineSpaceUnits = engineSpaceUnits(hullSize, engineRating, (typeof techLevels == "object" ? (techLevels?.engines || 0) : techLevels ));
+    let baseEngineSpaceUnits = engineSpaceUnits(hullSize, engineRating, (typeof techLevels == "object" ? (techLevels?.engines || 0) : techLevels ), engineAPConfig);
     let weaponSpaceUnits = shipWeaponsSUTotal(batteries, (typeof techLevels === "object" ? (techLevels?.weapons || 0) : techLevels ))
     let systemsSpaceUnits = shipSystemsSUTotal(systems, hullSize, baseEngineFactor, engineRating, weaponSpaceUnits, techLevels)
 
@@ -48,7 +48,9 @@ export function calculateDesignAttributes (hullSize, engineRating, batteries, sy
     let effectiveEngineRatingAdditions = Object.keys(systems).reduce((ratingSum, systemKey) => {
         let system = shipSystemsConfigs[systemKey];
         if(system.erm !== false) {
-            let systemEngineRatingAddition = evaluate(`${system.erm}`, { system_count: systems[systemKey], engine_rating: engineRating });
+            let systemCount = (Array.isArray(systems[systemKey]) ? systems[systemKey][0] : systems[systemKey])
+            let apCost = (Array.isArray(systems[systemKey]) ? systems[systemKey][1] : 0)
+            let systemEngineRatingAddition = evaluate(`${system.erm}`, { system_count: systemCount, engine_rating: engineRating }) * apCostModifer(apCost);
             return ratingSum + systemEngineRatingAddition;
         }
         return ratingSum;
@@ -72,8 +74,10 @@ export function calculateDesignAttributes (hullSize, engineRating, batteries, sy
     let effectiveHullSizeMultiplier = 1;
     let effectiveHullSizeAdditions = Object.keys(systems).reduce((ratingSum, systemKey) => {
         let system = shipSystemsConfigs[systemKey];
+        let systemCount = (Array.isArray(systems[systemKey]) ? systems[systemKey][0] : systems[systemKey]);
+        let apCost = (Array.isArray(systems[systemKey]) ? systems[systemKey][1] : 0)
         if(system.hsm !== false) {
-            let systemHullSizeAddition = evaluate(`${system.hsm}`,  { hull_size: hullSize, drat: shipDRATValue, system_count: systems[systemKey], engine_rating: engineRating });
+            let systemHullSizeAddition = evaluate(`${system.hsm}`,  { hull_size: hullSize, drat: shipDRATValue, system_count: systemCount, engine_rating: engineRating }) * apCostModifer(apCost);
             return ratingSum + systemHullSizeAddition;
         }
         return ratingSum;
@@ -104,15 +108,24 @@ export function calculateDesignAttributes (hullSize, engineRating, batteries, sy
 export function shipSpaceUnits(hullSize) { return hullSize * 100; }
 
 export function engineFactor(hullSize, techLevel = 0) { return ((hullSize * (hullSize + 50)) / 10) * techLevelModifier(techLevel); }
-export function engineSpaceUnits(hullSize, engineRating, techLevel = 0) { return Math.ceil(engineFactor(hullSize, techLevel) * engineRating); }
+export function engineSpaceUnits(hullSize, engineRating, techLevel = 0, apCostThresholds = []) { 
+    let engineRatingComponents = Array.from({ length: engineRating }, (_, ratingIndex) => { 
+        let rating = ratingIndex + 1;
+        let apCost = apCostThresholds.findIndex((threshold) => rating < threshold);
+        if(apCost < 0) { apCost = apCostThresholds.length; }
+        return engineFactor(hullSize, techLevel) * apCostModifer(apCost) 
+    });
+    return Math.ceil(engineRatingComponents.reduce((sum, value) => sum + value, 0)); 
+}
 export function effectiveEngineRating(base_engine_rating, systems  = {}, customConfigs = {}) {
     let effectiveEngineRating = base_engine_rating;
     Object.keys(systems).map((systemKey) => {
         let systemConfig = {...customConfigs, ...shipSystemsConfigs}[systemKey];
-        let systemCount = systems[systemKey];
-        if(typeof systemConfig.erm == "number") { effectiveEngineRating += (systemConfig.erm * systemCount); }
+        let systemCount = (Array.isArray(systems[systemKey]) ? systems[systemKey][0] : systems[systemKey]);
+        let apCost = (Array.isArray(systems[systemKey]) ? systems[systemKey][1] : 0);
+        if(typeof systemConfig.erm == "number") { effectiveEngineRating += (systemConfig.erm * systemCount) * apCostModifer(apCost); }
         if(typeof systemConfig.erm == "string") { 
-            effectiveEngineRating += evaluate(systemConfig.erm, { engine_rating: base_engine_rating, system_count: system_count }); 
+            effectiveEngineRating += evaluate(systemConfig.erm, { engine_rating: base_engine_rating, system_count: system_count }) * apCostModifer(apCost); 
         }
     })
     return effectiveEngineRating;
@@ -123,8 +136,8 @@ export function weaponRelativeBandWeight(range, prevRange) {
     return (range * (range + 4)) - (prevRange * (prevRange + 4))
 }
 
-export function weaponBandStrength(weight, rate_of_fire, accuracy, damage) {
-   return weight * rate_of_fire * (7 - accuracy) * damage;
+export function weaponBandStrength(weight, rate_of_fire, accuracy, damage, apCost = 0) {
+   return weight * rate_of_fire * (7 - accuracy) * damage * apCostModifer(apCost);
 }
 
 export function weaponBaseStrength(bands) {
@@ -139,7 +152,7 @@ export function weaponBaseStrength(bands) {
 
     let band_strengths = relative_band_weights.map((weight, index) => {
         let band = sorted_bands[index];
-        return weaponBandStrength(weight, band.rate_of_fire, band.accuracy, band.damage); // weight * band.rate_of_fire * (7 - band.accuracy) * band.damage;
+        return weaponBandStrength(weight, band.rate_of_fire, band.accuracy, band.damage, band.ap_cost || 0); // weight * band.rate_of_fire * (7 - band.accuracy) * band.damage;
     })
 
     return band_strengths.reduce((sum, value) => sum + value, 0);
@@ -149,7 +162,8 @@ export function weaponBaseSpaceUnitsFromConfig(config = { bands: [{
     range: 1,
     rate_of_fire: 1,
     accuracy: 2,
-    damage: 1
+    damage: 1,
+    ap_cost: 0
 }], traits: [] }, weapons_tech_level = 0) {
     
     let weaponStrength = weaponBaseStrength(config.bands);
@@ -163,6 +177,9 @@ export function weaponBaseSpaceUnitsFromConfig(config = { bands: [{
     let sorted_bands = config.bands.sort((a, b) => a.range - b.range);
     let maxRange = sorted_bands[sorted_bands.length - 1].range;
     let baseSpaceRequirements = (modifiedStrength * 0.10 / (maxRange + 4)) * techLevelModifier(weapons_tech_level);  
+    if(config.traits.includes("defensive")) {
+        baseSpaceRequirements += (sorted_bands[0].rate_of_fire * (6 - sorted_bands[0].accuracy)) / 10;
+    }
     return parseFloat(baseSpaceRequirements.toFixed(2));
 }
 
@@ -176,10 +193,12 @@ export function weaponBankSpaceUnits(weaponBSU, weaponCount, arcCount, munition_
 export function shipWeaponsSUTotal(batteries, weapons_tech_level = 0) {
     let shipWeaponsSUTotal = batteries.reduce((weaponsTotal, battery) => {
         let weaponBaseSU = weaponBaseSpaceUnitsFromConfig({ ...battery.config });
-        let batterySUTotal = Object.keys(battery.banks).reduce((batteryTotal, bankKey) => {
+        let batterySUTotal = Object.keys(battery.banks).reduce((batteryTotal, bankKey, bankIndex) => {
             let bankSize = battery.banks[bankKey];
             let bankArcCount = bankKey.split("").filter((arcKey) => !["Z", "Y"].includes(`${arcKey}`.toLocaleUpperCase())).length;
             let bankSpaceUnits = weaponBankSpaceUnits(weaponBaseSU, bankSize, bankArcCount, battery.config.munition_count, weapons_tech_level);
+
+            // Defensive Trait BSR Addition
             return batteryTotal + bankSpaceUnits;
         }, 0);
         return weaponsTotal + batterySUTotal;
@@ -204,17 +223,19 @@ export function shipORATTotal(batteries, systems, shipFactors, addonSystems = {}
 
     let shipTraitsORAT = Object.keys(systems).reduce((traitOratSum, systemKey) => {
         let traitConfig = { ...addonSystems, ...shipSystemsConfigs }[systemKey];
-        let systemCount = systems[systemKey];
+        let systemCount = (Array.isArray(systems[systemKey]) ? systems[systemKey][0] : systems[systemKey]);
+        let apCost = (Array.isArray(systems[systemKey]) ? systems[systemKey][1] : 0);
         if(typeof traitConfig.orat === "string") { 
             traitOratSum += evaluate(traitConfig.orat, { ...shipFactors, 
                 flight_count: systemCount, 
                 capacity: systemCount, 
                 system_count: systemCount, 
                 weapons_orat: batteriesORAT
-            }) 
+            })  * apCostModifer(apCost)
         }
         if(typeof traitConfig.orat === "number") { 
-            traitOratSum += traitConfig.orat; }
+            traitOratSum += traitConfig.orat * apCostModifer(apCost); 
+        }
         return traitOratSum;
     }, 0)
     
@@ -233,10 +254,11 @@ export function shipSystemsSUTotal (systems, hull_size, engine_factor, engine_ra
     
     let shipSystemSU = Object.keys(systems).reduce((systemsTotal, systemKey) => {
         let systemConfig = { ...addonSystems, ...shipSystemsConfigs }[systemKey];
-        let systemCount = systems[systemKey];
+        let systemCount = (Array.isArray(systems[systemKey]) ? systems[systemKey][0] : systems[systemKey]);
+        let apCost = (Array.isArray(systems[systemKey]) ? systems[systemKey][1] : 0)
         let factors = { hull_size: hull_size, system_count: systemCount, engine_factor: engine_factor, engine_rating: engine_rating, weapons_su: ship_weapons_space };
         if(systemConfig.su !== false) { 
-            let systemSU = evaluate(`${systemConfig.su}`, factors) * techLevelModifier(techLevels[systemConfig.tech] || 0);
+            let systemSU = evaluate(`${systemConfig.su}`, factors) * techLevelModifier(techLevels[systemConfig.tech] || 0) * apCostModifer(apCost);
             return systemsTotal + systemSU; 
         }
         return systemsTotal;
@@ -256,7 +278,8 @@ export function shipDRAT(systems, addonSystems = {}) {
     let screenDRATMultiplier = 0;
     let shipDRATValue = Object.keys(systems).reduce((shipDRAT, systemKey) => {
         let systemConfig = { ...addonSystems, ...shipSystemsConfigs }[systemKey];
-        let systemCount = systems[systemKey];
+        let systemCount = (Array.isArray(systems[systemKey]) ? systems[systemKey][0] : systems[systemKey]);
+        let apCost = (Array.isArray(systems[systemKey]) ? systems[systemKey][1] : 0);
         if(systemKey.includes("screen")) {
             let screenDirectionalDRATValues = {
                 "forward" : [0.33, 0.5, 0.67, 1],
@@ -270,7 +293,7 @@ export function shipDRAT(systems, addonSystems = {}) {
             return shipDRAT;
         }
         if(typeof systemConfig.drat == "string") { 
-            return evaluate(`${systemConfig.drat}`, { system_count: systemCount, drat: shipDRAT }); 
+            return ((evaluate(`${systemConfig.drat}`, { system_count: systemCount, drat: shipDRAT }) - 1) * apCostModifer(apCost)) + 1; 
         }
         return shipDRAT;
     }, 1)
@@ -864,6 +887,15 @@ export function techLevelModifier(techLevel) {
     }
 }
 
+export function apCostModifer(apCost) {
+    switch(apCost) {
+        case 1: { return 0.8; }
+        case 2: { return 0.6; }
+        case 3: { return 0.4; }
+        default: { return 1; }
+    }
+}
+
 export function fuelBunkerage(maxSpace, unusedSpace, techLevel = 0) {
 
     let emptyVolumeMassFraction = clamp((unusedSpace / maxSpace), 0.10, 0.75) * 100;
@@ -883,3 +915,6 @@ export function fuelBunkerage(maxSpace, unusedSpace, techLevel = 0) {
     ]
     return fuelBunkerageRanges[bunkerageRangeIndex][massFractionIndex];
 }
+
+export function shipSkew({ orat, effective_hull_size, drat }) { return ((orat * 0.04) / (effective_hull_size * drat)); }
+export function shipRate({ hull_size, combat_value }) { return Math.sqrt(hull_size * combat_value); }
