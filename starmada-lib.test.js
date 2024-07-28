@@ -3,7 +3,6 @@ import {
     shipSpaceUnits,
     engineFactor,
     engineSpaceUnits,
-    effectiveEngineRating,
     weaponBankSpaceUnits,
     weaponBaseSpaceUnitsFromConfig,
     weaponRelativeBandWeight,
@@ -179,6 +178,11 @@ test("Engine Space Units Factor", () => {
     expect(engineSpaceUnits(8, 5)).toBe(232)
     expect(engineSpaceUnits(8, 5, -2)).toBe(232 * 2)
     expect(engineSpaceUnits(8, 5, 2)).toBe(232 / 2)
+    expect(engineSpaceUnits(2, 5, 2, [])).toBe(26)
+})
+
+test("Engine Space Units Factor - AP Modified", () => {
+    expect(engineSpaceUnits(7, 5, 0, [3,5])).toBe(168)
 })
 
 test("Weapon Relative Band Weight", () => {
@@ -195,11 +199,12 @@ test("Weapon Band Strengths", () => {
     expect(weaponBandStrength(145, 1, 5, 1)).toBe(290)
 })
 
-test("Weapon Band Strength", () => {
+test("Weapon Band Strength - AP Modified", () => {
     // Class 5b Fusion Torpedo
-    expect(weaponBandStrength(45, 1, 3, 1)).toBe(180)
-    expect(weaponBandStrength(95, 1, 4, 1)).toBe(285)
-    expect(weaponBandStrength(145, 1, 5, 1)).toBe(290)
+    expect(weaponBandStrength(45, 1, 3, 1, 0)).toBe(180)
+    expect(weaponBandStrength(45, 1, 3, 1, 1)).toBe(180 * 0.8)
+    expect(weaponBandStrength(45, 1, 3, 1, 2)).toBe(180 * 0.6)
+    expect(weaponBandStrength(45, 1, 3, 1, 3)).toBe(180 * 0.4)
 })
 
 test("Weapon Base Strength", () => {
@@ -245,6 +250,53 @@ test("Weapon Base Space Requirements (BSR) - 5b FT", () => {
         }],
         traits: ["catastrophic"]
     })).toBe(13.91)
+})
+
+test("Weapon Base Space Requirements (BSR) - 5b FT - Defensive", () => {
+    // Class 5b Fusion Torpedo
+    expect(weaponBaseSpaceUnitsFromConfig({
+        bands: [{
+            range: 5,
+            rate_of_fire: 1,
+            accuracy: 3,
+            damage: 1
+        },{
+            range: 10,
+            rate_of_fire: 1,
+            accuracy: 4,
+            damage: 1
+        },{
+            range: 15,
+            rate_of_fire: 1,
+            accuracy: 5,
+            damage: 1
+        }],
+        traits: ["catastrophic", "defensive"]
+    })).toBe(14.21)
+})
+
+test("Weapon Base Space Requirements (BSR) - 5b FT - AP Modified", () => {
+    // Class 5b Fusion Torpedo
+    expect(weaponBaseSpaceUnitsFromConfig({
+        bands: [{
+            range: 5,
+            rate_of_fire: 1,
+            accuracy: 3,
+            damage: 1
+        },{
+            range: 10,
+            rate_of_fire: 1,
+            accuracy: 4,
+            damage: 1
+        },{
+            range: 15,
+            rate_of_fire: 1,
+            accuracy: 5,
+            damage: 1,
+            ap_cost: 1
+        }],
+        traits: ["catastrophic"]
+    })).toBe(12.84)
 })
 
 test("Weapon Base Space Requirements (BSR) - 5b FT - Tech Level Modified", () => {
@@ -429,11 +481,20 @@ test("Weapon Base Space Requirements (BSR) - 5a Generic - Single Trait", () => {
 
     Object.keys(weaponTraitConfigs).forEach(systemKey => {
         let system = weaponTraitConfigs[systemKey];
-        let wbsu = weaponBaseSpaceUnitsFromConfig({
-            bands: [singleBand],
-            traits: [systemKey]
-        })
-        expect(wbsu).toBeCloseTo(parseFloat((2.5 * system.multiplier).toFixed(2)), 1);
+        if(systemKey == "defensive") { 
+            let wbsu = weaponBaseSpaceUnitsFromConfig({
+                bands: [singleBand],
+                traits: [systemKey]
+            })
+            expect(wbsu).toBeCloseTo(parseFloat((2.9).toFixed(2)), 1);
+        } else { 
+            let wbsu = weaponBaseSpaceUnitsFromConfig({
+                bands: [singleBand],
+                traits: [systemKey]
+            })
+            expect(wbsu).toBeCloseTo(parseFloat((2.5 * system.multiplier).toFixed(2)), 1);
+        }
+        
     })
 })
 
@@ -474,6 +535,8 @@ test("Weapon Bank Space Units - Limited Ammo", () => {
     let wbsu = weaponBankSpaceUnits(14, 3, 4, 2)
     expect(wbsu).toBe(100.8)
 })
+
+
 
 test("DRAT Calculation Test - Non Screen Systems - Single Systems", () => {
     expect(shipDRAT({ "anti-fighter-batteries": 1 }, {})).toBe(1.2)
@@ -577,6 +640,28 @@ test("Ship ORAT/Factors Calculation Test - Hyperdrive Only", () => {
     expect(shipFactors.systems_su).toBe(15)
     expect(shipFactors.orat).toBe(0.00)
     expect(shipFactors.drat).toBe(1.20)
+    expect(shipFactors.combat_value).toBe(0.00)
+    expect(shipFactors.hull_size).toBe(3)
+    expect(shipFactors.effective_hull_size).toBe(3)
+    expect(shipFactors.effective_engine_rating).toBe(5)
+    expect(shipORATTotal(batteries, systems, shipFactors)).toBe(0)
+})
+
+
+test("Ship ORAT/Factors Calculation Test - Hyperdrive Only - AP Cost Modified", () => {
+    let batteries = []
+    let systems = {
+        "hyperdrive": [1,1]
+    }
+    let hullSize = 3;
+    let engineRating = 5;
+    let shipFactors = calculateDesignAttributes(hullSize, engineRating, batteries, systems)
+    expect(shipFactors.max_su).toBe(300)
+    expect(shipFactors.engines_su).toBe(80)
+    expect(shipFactors.weapons_su).toBe(0)
+    expect(shipFactors.systems_su).toBe(12)
+    expect(shipFactors.orat).toBe(0.00)
+    expect(shipFactors.drat).toBe(1.16)
     expect(shipFactors.combat_value).toBe(0.00)
     expect(shipFactors.hull_size).toBe(3)
     expect(shipFactors.effective_hull_size).toBe(3)
